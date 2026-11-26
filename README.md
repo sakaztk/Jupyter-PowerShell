@@ -37,16 +37,10 @@ The PowerShell 7 kernel starts an external `pwsh.exe` process and requires Pytho
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
-& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShell/powershell/Install/Install-PowerShellSDKKernel.ps1).Content)) -User
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShell/powershellsdk/Install/Install-PowerShellSDKKernel.ps1).Content)) -User
 ```
 
 The PowerShell SDK kernel requires Python/Jupyter and .NET 11 Runtime or SDK.
-
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
-& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShellSDKKernel.ps1).Content)) -User
-```
 
 ## Uninstallation
 

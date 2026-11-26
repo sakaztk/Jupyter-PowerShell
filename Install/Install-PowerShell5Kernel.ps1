@@ -160,7 +160,6 @@ if (-not $latestRelease.tag_name) {
 $versionString = $latestRelease.tag_name
 $links         = (Invoke-WebRequest -Uri "$releaseURI/expanded_assets/$versionString" -UseBasicParsing).Links.href
 
-$logoUri   = 'https://raw.githubusercontent.com/PowerShell/PowerShell/master/assets/Powershell_64.png'
 $logoCache = $null  # path to a downloaded copy; reused on second call
 
 function Install-PS5Kernel {
@@ -206,7 +205,7 @@ function Install-PS5Kernel {
 	}
 	else {
 		Write-Host "Downloading kernel logo..."
-		Invoke-WebRequest -Uri $script:logoUri -UseBasicParsing -OutFile $logo64
+		Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/PowerShell/PowerShell/master/assets/Powershell_64.png' -UseBasicParsing -OutFile $logo64
 		$script:logoCache = $logo64
 	}
 
