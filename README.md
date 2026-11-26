@@ -24,6 +24,21 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
 
 If you need to pass other arguments such as `-X64` or `-X86`, save the script locally first and then run it with parameters.
 
+### PowerShell 7 kernel
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell7Kernel.ps1).Content)) -User
+```
+
+The PowerShell 7 kernel starts an external `pwsh.exe` process and requires Python/Jupyter and .NET 11 Runtime or SDK. Use `-ExecutablePath` to select a specific pwsh executable.
+
+To remove it:
+
+```powershell
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell7Kernel.ps1).Content)) -Uninstall
+```
+
 ### PowerShell SDK kernel
 
 ```powershell
@@ -31,12 +46,12 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
 (Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShellSDKKernel.ps1).Content | Invoke-Expression
 ```
 
-The script checks for .NET 10 first and installs the runtime automatically if it is missing.
+The script checks for .NET 11 first and installs the runtime automatically if it is missing.
 It uses `winget` when available and falls back to a web download when it is not.
 Without `-User` the script will self-elevate to administrator.
 
 To install to the current user's area without administrator privileges, use `-User`.
-Note: in user mode, .NET 10 Runtime installation is skipped — install it manually first if needed.
+Note: in user mode, .NET 11 Runtime installation is skipped — install it manually first if needed.
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
@@ -55,6 +70,13 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
 & ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell5Kernel.ps1).Content)) -Uninstall
 ```
 
+### PowerShell 7 kernel
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell7Kernel.ps1).Content)) -Uninstall
+```
+
 ### PowerShell SDK kernel
 
 ```powershell
@@ -62,10 +84,14 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
 & ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShellSDKKernel.ps1).Content)) -Uninstall
 ```
 
+## Logo
+This procedure will install the PowerShell logo in JupyterLab that used with permission from Microsoft. The assets are trademarked by Microsoft (https://github.com/PowerShell/PowerShell/tree/master/assets).
+
 ## Notes
 
 - Jupyter kernels are registered under the current Python environment.
-- The SDK kernel requires .NET 10.
+- The PowerShell 7 kernel requires .NET 11 and an external `pwsh.exe`.
+- The SDK kernel requires .NET 11.
 - The PowerShell 5 installer creates both x64 and x86 kernels unless a specific variant is selected.
 
 ## Third-Party Notices

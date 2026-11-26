@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Security.Cryptography;
@@ -24,8 +25,16 @@ namespace Jupyter_PowerShell5
         private Task heartbeatTask;
         private Task serverTask;
         private CancellationTokenSource cancellationTokenSource;
+        private NetMQPoller serverPoller;
         private Runspace psRunspace;
+        private PowerShell activePowerShell;
+        private Task executionTask;
+        private readonly object executionLock = new object();
+        private readonly object executionTaskLock = new object();
         private int executionCount;
+        private bool lastExecutionSucceeded = true;
+
+        public bool LastExecutionSucceeded => this.lastExecutionSucceeded;
 
         public Kernel(Connection connection)
         {
@@ -56,7 +65,25 @@ namespace Jupyter_PowerShell5
 
         public void Wait()
         {
-            Task.WaitAll(this.heartbeatTask, this.serverTask);
+            Task executionTask;
+            lock (this.executionTaskLock)
+            {
+                executionTask = this.executionTask;
+            }
+
+            var tasks = new List<Task>();
+            if (this.heartbeatTask != null) tasks.Add(this.heartbeatTask);
+            if (this.serverTask != null) tasks.Add(this.serverTask);
+            if (executionTask != null) tasks.Add(executionTask);
+            if (tasks.Count > 0) Task.WaitAll(tasks.ToArray());
+        }
+
+        public void QueueExecution(Action action)
+        {
+            lock (this.executionTaskLock)
+            {
+                this.executionTask = Task.Run(action);
+            }
         }
 
         public void Stop()
@@ -67,17 +94,41 @@ namespace Jupyter_PowerShell5
                 {
                     Console.WriteLine("Stopping kernel");
                     this.cancellationTokenSource.Cancel();
-                    this.Wait();
+                    try { this.activePowerShell?.Stop(); } catch { }
+                    this.serverPoller?.Stop();
+                }
+            }
 
+            this.Wait();
+
+            lock (this)
+            {
+                if (this.psRunspace != null)
+                {
                     Console.WriteLine("Closing PowerShell session");
                     this.psRunspace.Close();
                     this.psRunspace.Dispose();
+                    this.psRunspace = null;
                 }
+            }
+        }
+
+        public void RequestShutdown()
+        {
+            if (this.cancellationTokenSource != null)
+            {
+                this.cancellationTokenSource.Cancel();
+                this.serverPoller?.Stop();
             }
         }
 
         public string SignMessage(params string[] parts)
         {
+            if (this.signatureProvider == null)
+            {
+                return string.Empty;
+            }
+
             this.signatureProvider.Initialize();
             foreach (var item in parts)
             {
@@ -91,7 +142,10 @@ namespace Jupyter_PowerShell5
 
         public int InvokePowerShell(string script, Message originalMessage)
         {
+            lock (this.executionLock)
+            {
             using var ps = PowerShell.Create();
+            this.activePowerShell = ps;
             ps.Runspace = this.psRunspace;
             ps.Streams.Verbose.DataAdded += this.GetStreamHandler(index =>
                 $"VERBOSE: {ps.Streams.Verbose[index]}", ps, Stream.StdOut, originalMessage);
@@ -102,9 +156,10 @@ namespace Jupyter_PowerShell5
             ps.Streams.Error.DataAdded += this.GetStreamHandler(index =>
                 ps.Streams.Error[index].ToString(), ps, Stream.StdErr, originalMessage);
 
+            this.lastExecutionSucceeded = true;
             try
             {
-                var outputs = ps.AddScript(script).AddCommand("Out-String").AddParameter("Width", 200).Invoke();
+                var outputs = ps.AddScript(script).AddCommand("Out-String").Invoke();
                 this.IOPubSocket.SendMessage(Message.Create(
                     originalMessage, "stream", new Stream
                     {
@@ -114,6 +169,7 @@ namespace Jupyter_PowerShell5
             }
             catch (RuntimeException ex)
             {
+                this.lastExecutionSucceeded = false;
                 this.IOPubSocket.SendMessage(Message.Create(
                     originalMessage, "stream", new Stream
                     {
@@ -123,8 +179,22 @@ namespace Jupyter_PowerShell5
             }
 
             this.executionCount += 1;
+            this.activePowerShell = null;
             return this.executionCount;
+            }
         }
+
+        public void Interrupt()
+        {
+            try
+            {
+                this.activePowerShell?.Stop();
+            }
+            catch
+            {
+            }
+        }
+
 
         public CommandCompletion InvokeCommandCompletion(CompleteRequest req)
         {
@@ -141,8 +211,20 @@ namespace Jupyter_PowerShell5
 
             while (!this.cancellationTokenSource.IsCancellationRequested)
             {
-                this.HBSocket.SendFrame(this.HBSocket.ReceiveFrameBytes());
-                Console.WriteLine("~ Heartbeat");
+                var msg = new NetMQ.Msg();
+                msg.InitEmpty();
+                try
+                {
+                    if (this.HBSocket.TryReceive(ref msg, TimeSpan.FromMilliseconds(100)))
+                    {
+                        var frame = msg.Data;
+                        this.HBSocket.SendFrame(frame);
+                    }
+                }
+                finally
+                {
+                    msg.Close();
+                }
             }
 
             Console.WriteLine("Stopping heartbeat handler");
@@ -162,8 +244,14 @@ namespace Jupyter_PowerShell5
             this.IOPubSocket.SendMessage(Message.Create(
                 globalSessionId, "status", new Status {ExecutionState = Status.Starting}), this);
 
-            while (!this.cancellationTokenSource.IsCancellationRequested)
+            this.serverPoller = new NetMQPoller();
+            this.ShellSocket.ReceiveReady += (_, _) =>
             {
+                if (this.cancellationTokenSource.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 var message = this.ShellSocket.ReceiveMessage(this);
                 this.IOPubSocket.SendMessage(Message.Create(
                     message, "status", new Status {ExecutionState = Status.Busy}), this);
@@ -181,13 +269,31 @@ namespace Jupyter_PowerShell5
                         case "complete_request":
                             MessageHandlers.HandleComplete(this, message);
                             break;
+                        case "is_complete_request":
+                            MessageHandlers.HandleIsComplete(this, message);
+                            break;
+                        case "shutdown_request":
+                            MessageHandlers.HandleShutdown(this, message);
+                            break;
+                        case "interrupt_request":
+                            MessageHandlers.HandleInterrupt(this, message);
+                            break;
                     }
                 }
 
                 this.IOPubSocket.SendMessage(Message.Create(
                     message, "status", new Status {ExecutionState = Status.Idle}), this);
+            };
+
+            this.serverPoller.Add(this.ShellSocket);
+            this.serverPoller.RunAsync();
+
+            while (!this.cancellationTokenSource.IsCancellationRequested)
+            {
+                Thread.Sleep(100);
             }
 
+            this.serverPoller.Stop();
             Console.WriteLine("Stopping shell server");
             this.ShellSocket.Dispose();
             Console.WriteLine("Stopping iopub publisher");

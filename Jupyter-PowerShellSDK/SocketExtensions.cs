@@ -10,6 +10,21 @@ namespace Jupyter_PowerShellSDK
 {
     public static class SocketExtensions
     {
+        private static bool SignaturesEqual(string left, string right)
+        {
+            var leftBytes = Encoding.UTF8.GetBytes(left);
+            var rightBytes = Encoding.UTF8.GetBytes(right);
+            var different = leftBytes.Length ^ rightBytes.Length;
+            var length = Math.Max(leftBytes.Length, rightBytes.Length);
+            for (var i = 0; i < length; i++)
+            {
+                var leftByte = i < leftBytes.Length ? leftBytes[i] : (byte)0;
+                var rightByte = i < rightBytes.Length ? rightBytes[i] : (byte)0;
+                different |= leftByte ^ rightByte;
+            }
+            return different == 0;
+        }
+
         private static readonly byte[] Delimiter = Encoding.ASCII.GetBytes("<IDS|MSG>");
 
         public static Message ReceiveMessage(this IReceivingSocket socket, Kernel kernel = null)
@@ -34,17 +49,29 @@ namespace Jupyter_PowerShellSDK
             if (kernel != null)
             {
                 var sig = kernel.SignMessage(header, parentHeader, metadata, content);
-                if (sig != message.Signature)
+                if (!SignaturesEqual(sig, message.Signature ?? string.Empty))
                 {
                     Console.WriteLine("! WARNING: Invalid message signature, ignoring the message");
                     message.Signature = null;
                 }
             }
 
-            message.Header = JsonConvert.DeserializeObject<Header>(header);
-            message.ParentHeader = JsonConvert.DeserializeObject<Header>(parentHeader);
-            message.MetaData = JObject.Parse(metadata);
-            message.Content = JObject.Parse(content);
+            try
+            {
+                message.Header = JsonConvert.DeserializeObject<Header>(header) ?? new Header();
+                message.ParentHeader = JsonConvert.DeserializeObject<Header>(parentHeader) ?? new Header();
+                message.MetaData = JObject.Parse(metadata);
+                message.Content = JObject.Parse(content);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"! WARNING: Invalid Jupyter message JSON: {ex.Message}");
+                message.Header = new Header();
+                message.ParentHeader = new Header();
+                message.MetaData = new JObject();
+                message.Content = new JObject();
+                message.Signature = null;
+            }
             // Console.WriteLine($"> [{message.Header.MessageType}] {metadata} {content}");
             return message;
         }

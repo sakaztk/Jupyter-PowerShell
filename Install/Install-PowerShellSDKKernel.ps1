@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-	Installs the Jupyter PowerShell SDK Kernel (requires .NET 10).
+	Installs the Jupyter PowerShell SDK Kernel (requires .NET 11).
 
 .DESCRIPTION
-	Checks whether .NET 10 Runtime or SDK is already installed.
+	Checks whether .NET 11 Runtime or SDK is already installed.
 	If neither is found, installs the Runtime automatically.
 	winget is used if available; otherwise falls back to web download.
 
@@ -13,7 +13,7 @@
 
 .PARAMETER User
 	Install into the current user's area only. No elevation is required.
-	NOTE: .NET 10 Runtime installation is skipped in user mode (requires admin).
+	NOTE: .NET 11 Runtime installation is skipped in user mode (requires admin).
 
 .PARAMETER Uninstall
 	Remove the installed kernel. Both user-scope and system-scope locations
@@ -77,7 +77,7 @@ if ($User) {
 }
 else {
 	$packagePath = $(python -c "import site; print(site.getsitepackages()[0])")
-	$kernelPath  = $((python -m jupyter kernelspec list | Select-String 'python3$' | ForEach-Object {($_ -replace '^\s+', '') -split '^python3\s+'})[1] | Split-Path)
+	$kernelPath = $(python -c 'import jupyter_core.paths as p; print(p.get_system_data_dirs()[0])')
 }
 
 "Scope        : $(if ($User) { 'User' } else { 'System' })"
@@ -114,7 +114,7 @@ if ($Uninstall) {
 	$userPackagePath = $(python -c "import site; print(site.getusersitepackages())")
 	$userKernelPath  = Join-Path (python -m jupyter --data-dir) 'kernels'
 	$sysPackagePath  = $(python -c "import site; print(site.getsitepackages()[0])")
-	$sysKernelPath   = $((python -m jupyter kernelspec list | Select-String 'python3$' | ForEach-Object {($_ -replace '^\s+', '') -split '^python3\s+'})[1] | Split-Path)
+	$sysKernelPath = $(python -c 'import jupyter_core.paths as p; print(p.get_system_data_dirs()[0])')
 
 	foreach ($kp in @($userKernelPath, $sysKernelPath)) {
 		Remove-TargetDirectory -Path (Join-Path $kp 'powershellSDK') -Label 'PowerShell SDK kernelspec'
@@ -127,14 +127,14 @@ if ($Uninstall) {
 	return
 }
 
-# Check .NET 10 installation and install Runtime if needed
-function Test-DotNet10Installed {
+# Check .NET 11 installation and install Runtime if needed
+function Test-DotNet11Installed {
 	# Check via dotnet CLI
 	try {
 		$runtimes = & dotnet --list-runtimes 2>$null
-		if ($runtimes -match 'Microsoft\.NETCore\.App 10\.') { return $true }
+		if ($runtimes -match 'Microsoft\.NETCore\.App 11\.') { return $true }
 		$sdks = & dotnet --list-sdks 2>$null
-		if ($sdks -match '^10\.') { return $true }
+		if ($sdks -match '^11\.') { return $true }
 	}
 	catch { }
 
@@ -146,7 +146,7 @@ function Test-DotNet10Installed {
 	foreach ($path in $regPaths) {
 		if (Test-Path $path) {
 			$versions = Get-Item $path | Select-Object -ExpandProperty Property -ErrorAction SilentlyContinue
-			if ($versions -match '^10\.') { return $true }
+			if ($versions -match '^11\.') { return $true }
 		}
 	}
 
@@ -161,8 +161,8 @@ function Test-WingetAvailable {
 	catch { return $false }
 }
 
-function Install-DotNet10RuntimeByWinget {
-	$package = 'Microsoft.DotNet.Runtime.10'
+function Install-DotNet11RuntimeByWinget {
+	$package = 'Microsoft.DotNet.Runtime.11.0'
 	$result  = winget list $package 2>$null
 	if ($result -match [regex]::Escape($package)) {
 		Write-Host "Upgrading $package ..."
@@ -174,13 +174,13 @@ function Install-DotNet10RuntimeByWinget {
 	}
 }
 
-function Install-DotNet10RuntimeByWeb {
+function Install-DotNet11RuntimeByWeb {
 	param (
 		[string]$TempFolder
 	)
 
-	Write-Host "Looking up latest .NET 10 Runtime installer..."
-	$links     = (Invoke-WebRequest -Uri 'https://dotnet.microsoft.com/en-us/download/dotnet/10.0/runtime' -UseBasicParsing).Links.href
+	Write-Host "Looking up latest .NET 11 Runtime installer..."
+	$links     = (Invoke-WebRequest -Uri 'https://dotnet.microsoft.com/en-us/download/dotnet/11.0/runtime' -UseBasicParsing).Links.href
 	$latestVer = ($links |
 		Select-String -Pattern '.*runtime.*windows-x64-installer' |
 		ForEach-Object { [version](($_ -replace '.*runtime-(([0-9]+\.){1}[0-9]+(\.[0-9]+)?)-.*', '$1')) } |
@@ -198,24 +198,24 @@ function Install-DotNet10RuntimeByWeb {
 	Remove-Item $dotnetInstaller -Force -Verbose
 }
 
-Write-Host "Checking .NET 10 installation status..."
-if (Test-DotNet10Installed) {
-	Write-Host ".NET 10 Runtime or SDK is already installed. Skipping .NET installation."
+Write-Host "Checking .NET 11 installation status..."
+if (Test-DotNet11Installed) {
+	Write-Host ".NET 11 Runtime or SDK is already installed. Skipping .NET installation."
 }
 else {
-	Write-Host ".NET 10 not found. Installing Runtime..."
+	Write-Host ".NET 11 not found. Installing Runtime..."
 	try {
 		if (Test-WingetAvailable) {
 			Write-Host "winget is available. Using winget..."
-			Install-DotNet10RuntimeByWinget
+			Install-DotNet11RuntimeByWinget
 		}
 		else {
 			Write-Host "winget is not available. Falling back to web download..."
-			Install-DotNet10RuntimeByWeb -TempFolder $WorkingFolder
+			Install-DotNet11RuntimeByWeb -TempFolder $WorkingFolder
 		}
 	}
 	catch {
-		Write-Warning "Error installing .NET 10 Runtime: $_"
+		Write-Warning "Error installing .NET 11 Runtime: $_"
 	}
 }
 
@@ -232,7 +232,7 @@ if (-not $latestRelease.tag_name) {
 $versionString = $latestRelease.tag_name
 $releaseURI    = 'https://github.com/sakaztk/Jupyter-PowerShellSDK/releases'
 $links         = (Invoke-WebRequest -Uri "$releaseURI/expanded_assets/$versionString" -UseBasicParsing).Links.href
-$fileLink      = $links | Select-String -Pattern 'Jupyter-PowerShellSDK-7.*\.zip|PowerShellSDK\.zip' | Select-Object -First 1
+$fileLink      = $links | Select-String -Pattern 'Jupyter-PowerShellSDK.*\.zip|PowerShellSDK\.zip' | Select-Object -First 1
 if (-not $fileLink) {
 	throw "Could not locate PowerShellSDK zip asset in release assets for $versionString"
 }
@@ -244,6 +244,13 @@ Write-Host "Downloading $zipName from $fileUri ..."
 $installDir = Join-Path $packagePath 'powershellSDK_kernel'
 try {
 	Invoke-WebRequest -Uri $fileUri -UseBasicParsing -OutFile $zipPath
+	$shaLink = $links | Select-String -Pattern 'PowerShellSDK\.zip\.sha256|PowerShellSDK\.sha256' | Select-Object -First 1
+	if ($shaLink) {
+		$shaUri = 'https://github.com' + $shaLink.ToString().Trim()
+		$expectedHash = ((Invoke-WebRequest -Uri $shaUri -UseBasicParsing).Content -split '\s+')[0].Trim().ToLowerInvariant()
+		$actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+		if ($actualHash -ne $expectedHash) { throw "SHA-256 validation failed. Expected $expectedHash but downloaded $actualHash." }
+	}
 	Write-Host "Extracting to $installDir ..."
 	Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
 }
@@ -274,18 +281,13 @@ $bitmap32.Dispose()
 $image.Dispose()
 
 # Write kernel.json
-$exePath = "$($installDir.Replace('\', '/'))/Jupyter_PowerShellSDK.exe"
-$kernelJson = @"
-{
-	"argv": [
-		"$exePath",
-		"{connection_file}"
-	],
-	"display_name": "PowerShell 7 (SDK)",
-	"language": "Powershell"
+$exePath = Join-Path $installDir 'Jupyter_PowerShellSDK.exe'
+$kernelJson = [ordered]@{
+	argv = @($exePath, '{connection_file}')
+	display_name = 'PowerShell SDK'
+	language = 'powershell'
 }
-"@
-[System.IO.File]::WriteAllText((Join-Path $kernelSpecDir 'kernel.json'), $kernelJson, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText((Join-Path $kernelSpecDir 'kernel.json'), ($kernelJson | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 
 # Move any extra PNGs shipped with the archive
 $extraPngs = Join-Path $installDir '*.png'

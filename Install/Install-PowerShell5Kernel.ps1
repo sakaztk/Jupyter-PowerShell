@@ -95,7 +95,7 @@ if ($User) {
 }
 else {
 	$packagePath = $(python -c "import site; print(site.getsitepackages()[0])")
-	$kernelPath  = $((python -m jupyter kernelspec list | Select-String 'python3$' | ForEach-Object {($_ -replace '^\s+', '') -split '^python3\s+'})[1] | Split-Path)
+	$kernelPath = $(python -c 'import jupyter_core.paths as p; print(p.get_system_data_dirs()[0])')
 }
 
 "Scope        : $(if ($User) { 'User' } else { 'System' })"
@@ -133,7 +133,7 @@ if ($Uninstall) {
 	$userKernelPath  = Join-Path (python -m jupyter --data-dir) 'kernels'
 
 	$sysPackagePath  = $(python -c "import site; print(site.getsitepackages()[0])")
-	$sysKernelPath   = $((python -m jupyter kernelspec list | Select-String 'python3$' | ForEach-Object {($_ -replace '^\s+', '') -split '^python3\s+'})[1] | Split-Path)
+	$sysKernelPath = $(python -c 'import jupyter_core.paths as p; print(p.get_system_data_dirs()[0])')
 
 	foreach ($kp in @($userKernelPath, $sysKernelPath)) {
 		Remove-TargetDirectory -Path (Join-Path $kp 'powershell5')     -Label 'PowerShell 5 kernelspec'
@@ -149,10 +149,13 @@ if ($Uninstall) {
 }
 
 Write-Host "Fetching latest release information..."
-$releaseURI    = 'https://github.com/sakaztk/Jupyter-PowerShellSDK/releases'
-$latestRelease = (Invoke-WebRequest -Uri "$releaseURI/latest" -UseBasicParsing `
-					-Headers @{ 'Accept' = 'application/json' } | ConvertFrom-Json).update_url
-$versionString = $latestRelease -replace '.*tag/(.*)', '$1'
+$releaseURI = 'https://github.com/sakaztk/Jupyter-PowerShellSDK/releases'
+$releaseApi = 'https://api.github.com/repos/sakaztk/Jupyter-PowerShellSDK/releases/latest'
+$latestRelease = Invoke-RestMethod -Uri $releaseApi -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
+if (-not $latestRelease.tag_name) {
+	throw "Could not determine latest release tag from $releaseApi"
+}
+$versionString = $latestRelease.tag_name
 $links         = (Invoke-WebRequest -Uri "$releaseURI/expanded_assets/$versionString" -UseBasicParsing).Links.href
 
 $logoUri   = 'https://raw.githubusercontent.com/PowerShell/PowerShell/master/assets/Powershell_64.png'
@@ -175,6 +178,14 @@ function Install-PS5Kernel {
 	Write-Host "Downloading $ZipName from $fileUri ..."
 	try {
 		Invoke-WebRequest -Uri $fileUri -UseBasicParsing -OutFile $zipPath
+		$shaName = "$ZipName.sha256"
+		$shaLink = $ReleaseLinks | Select-String -Pattern ".*$([regex]::Escape($shaName))" | Select-Object -First 1
+		if ($shaLink) {
+			$shaUri = 'https://github.com' + $shaLink.ToString().Trim()
+			$expectedHash = ((Invoke-WebRequest -Uri $shaUri -UseBasicParsing).Content -split '\s+')[0].Trim().ToLowerInvariant()
+			$actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+			if ($actualHash -ne $expectedHash) { throw "SHA-256 validation failed. Expected $expectedHash but downloaded $actualHash." }
+		}
 		Write-Host "Extracting to $InstallDir ..."
 		Expand-Archive -Path $zipPath -DestinationPath $InstallDir -Force
 	}
@@ -207,18 +218,13 @@ function Install-PS5Kernel {
 	$bitmap32.Dispose()
 	$image.Dispose()
 
-	$exePath = "$($InstallDir.Replace('\', '/'))/Jupyter_PowerShell5.exe"
-	$kernelJson = @"
-{
-	"argv": [
-		"$exePath",
-		"{connection_file}"
-	],
-	"display_name": "$DisplayName",
-	"language": "Powershell"
-}
-"@
-	[System.IO.File]::WriteAllText((Join-Path $kernelSpecDir 'kernel.json'), $kernelJson, (New-Object System.Text.UTF8Encoding($false)))
+	$exePath = Join-Path $InstallDir 'Jupyter_PowerShell5.exe'
+	$kernelJson = [ordered]@{
+		argv = @($exePath, '{connection_file}')
+		display_name = $DisplayName
+		language = 'powershell'
+	}
+	[System.IO.File]::WriteAllText((Join-Path $kernelSpecDir 'kernel.json'), ($kernelJson | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 
 	# Move any extra PNGs shipped with the archive
 	$extraPngs = Join-Path $InstallDir '*.png'

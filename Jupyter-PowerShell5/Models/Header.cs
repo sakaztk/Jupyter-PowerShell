@@ -26,7 +26,7 @@ namespace Jupyter_PowerShell5.Models
                 Username = "powershell5",
                 Date = DateTime.UtcNow.ToString("o"),
                 MessageType = messageType,
-                Version = "5.1"
+                Version = "5.3"
             };
         }
     }
