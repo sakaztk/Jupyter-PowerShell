@@ -4,22 +4,22 @@ Jupyter kernel implementation for Windows PowerShell SDK and Windows PowerShell 
 
 ## Installation
 
-A common modern approach is to download the install script directly from GitHub and execute it in place.
+A common approach is to download the install script directly from GitHub and execute it in place.
 
 ### PowerShell 5 kernel
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
-(Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell5Kernel.ps1).Content | Invoke-Expression
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShell/powershellsdk/Install/Install-PowerShell5Kernel.ps1).Content))
 ```
 
-By default, this installs both x64 and x86 kernels system-wide and will self-elevate to administrator if needed.
+By default, this installs both x64 and x86 kernels system-wide and requires administrator privileges.
 
 To install to the current user's area without administrator privileges, use `-User`:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
-& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell5Kernel.ps1).Content)) -User
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShell/powershellsdk/Install/Install-PowerShell5Kernel.ps1).Content)) -User
 ```
 
 If you need to pass other arguments such as `-X64` or `-X86`, save the script locally first and then run it with parameters.
@@ -28,30 +28,20 @@ If you need to pass other arguments such as `-X64` or `-X86`, save the script lo
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
-& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell7Kernel.ps1).Content)) -User
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShell/powershellsdk/Install/Install-PowerShell7Kernel.ps1).Content)) -User
 ```
 
 The PowerShell 7 kernel starts an external `pwsh.exe` process and requires Python/Jupyter and .NET 11 Runtime or SDK. Use `-ExecutablePath` to select a specific pwsh executable.
-
-To remove it:
-
-```powershell
-& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShell7Kernel.ps1).Content)) -Uninstall
-```
 
 ### PowerShell SDK kernel
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
-(Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShellSDK/powershellsdk/Install/Install-PowerShellSDKKernel.ps1).Content | Invoke-Expression
+& ([scriptblock]::Create((Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/sakaztk/Jupyter-PowerShell/powershell/Install/Install-PowerShellSDKKernel.ps1).Content)) -User
 ```
 
-The script checks for .NET 11 first and installs the runtime automatically if it is missing.
-It uses `winget` when available and falls back to a web download when it is not.
-Without `-User` the script will self-elevate to administrator.
+The PowerShell SDK kernel requires Python/Jupyter and .NET 11 Runtime or SDK.
 
-To install to the current user's area without administrator privileges, use `-User`.
-Note: in user mode, .NET 11 Runtime installation is skipped — install it manually first if needed.
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
@@ -62,6 +52,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope process
 
 You can also download and run the uninstall mode directly from GitHub.
 Uninstall mode checks **both user-scope and system-scope** locations and removes any matching kernels found.
+It reqires administrator privileges to remove system-scope kernels.
 
 ### PowerShell 5 kernel
 

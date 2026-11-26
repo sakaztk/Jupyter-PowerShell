@@ -57,11 +57,6 @@ if (-not $X64 -and -not $X86) {
 	$X86 = $true
 }
 
-# =====================================================================
-# Privilege check / self-elevation
-# -User  : install to user scope, no elevation needed
-# default: install to system scope; self-elevate if not already admin
-# =====================================================================
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
 	[Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -81,21 +76,23 @@ if (-not $User -and -not $isAdmin) {
 	}
 
 	$psExe   = (Get-Process -Id $PID).Path
-	$argFull = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" $($argList -join ' ')"
+	$argFull = "-NoExit -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" $($argList -join ' ')"
 	Start-Process -FilePath $psExe -ArgumentList $argFull -Verb RunAs -Wait
 	exit
 }
 
-# =====================================================================
-# Resolve install paths based on scope
-# =====================================================================
 if ($User) {
 	$packagePath = $(python -c "import site; print(site.getusersitepackages())")
 	$kernelPath  = Join-Path (python -m jupyter --data-dir) 'kernels'
 }
 else {
-	$packagePath = $(python -c "import site; print(site.getsitepackages()[0])")
-	$kernelPath = $(python -c 'import jupyter_core.paths as p; print(p.get_system_data_dirs()[0])')
+	try {
+		$packagePath = $(python -c "import site; print(site.getsitepackages()[0])")
+		$kernelPath = Join-Path (python -c "import jupyter_core.paths as p; print(p.SYSTEM_JUPYTER_PATH[0])") 'kernels'
+	}
+	catch {
+		throw "Could not determine system package or kernel path. Please use elevated PowerShell."
+	}
 }
 
 "Scope        : $(if ($User) { 'User' } else { 'System' })"
@@ -132,8 +129,13 @@ if ($Uninstall) {
 	$userPackagePath = $(python -c "import site; print(site.getusersitepackages())")
 	$userKernelPath  = Join-Path (python -m jupyter --data-dir) 'kernels'
 
-	$sysPackagePath  = $(python -c "import site; print(site.getsitepackages()[0])")
-	$sysKernelPath = $(python -c 'import jupyter_core.paths as p; print(p.get_system_data_dirs()[0])')
+	try {
+		$sysPackagePath  = $(python -c "import site; print(site.getsitepackages()[0])")
+		$sysKernelPath = Join-Path (python -c "import jupyter_core.paths as p; print(p.SYSTEM_JUPYTER_PATH[0])") 'kernels'
+	}
+	catch {
+		throw "Could not determine system package or kernel path. Please use elevated PowerShell."
+	}
 
 	foreach ($kp in @($userKernelPath, $sysKernelPath)) {
 		Remove-TargetDirectory -Path (Join-Path $kp 'powershell5')     -Label 'PowerShell 5 kernelspec'
@@ -258,4 +260,3 @@ if ($X86) {
 }
 
 Write-Host "Installation complete."
-Read-Host > $null
